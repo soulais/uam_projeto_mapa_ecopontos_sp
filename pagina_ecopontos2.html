@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapa de Ecopontos / PEVs - Projeto ODS12</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <style>
+    html,body{height:100%;margin:0;}
+    #map{height:100%;width:100%;}
+    
+    /* ESTILOS PADRÃO (Desktop/Tablet) */
+    .controls, .calc-panel {
+      position: absolute;
+      z-index: 1000;
+      background: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+      font-family: Roboto, Arial, sans-serif;
+      max-width: 350px; 
+      transition: transform 0.3s ease, width 0.3s ease; /* Transição para o toggle */
+      
+      /* --- CORREÇÃO ANTIGA: Limitar altura e habilitar scroll para evitar sobreposição em telas pequenas --- */
+      max-height: 90vh; 
+      overflow-y: auto; 
+      /* --------------------------------------------------------------------------------------------- */
+    }
+
+    /* POSICIONAMENTO DOS PAINÉIS */
+    .controls {
+      top: 10px;
+      left: 10px;
+      width: 280px;
+    }
+    .calc-panel {
+      bottom: 20px;
+      left: 10px;
+      width: 280px;
+    }
+
+    /* TÍTULOS E MARGENS */
+    .controls h4, .calc-panel h4 {margin:0 0 8px 0;font-size:16px;color:#4285F4}
+    
+    /* INPUTS e SELECTS (largura total da caixa) */
+    .controls button, .controls select, .controls input[type="text"], 
+    .controls input[type="number"], .calc-panel input, .calc-panel select, .calc-panel button {
+      width:100%; 
+      margin:6px 0;
+      padding:8px;
+      box-sizing:border-box;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background-color: #f8f8f8;
+      cursor:pointer;
+      font-size: 13px; /* Fonte reduzida em 1pt */
+    }
+    
+    .controls button {
+        background-color: #4285F4;
+        color: white;
+        font-weight: bold;
+        border: none;
+    }
+    #btnClear {
+        background-color: #db4437;
+    }
+    .calc-panel button {
+        background-color: #34a853; 
+        color: white;
+        font-weight: bold;
+        border: none;
+    }
+
+    /* ÍCONE DE TOGGLE (APENAS EM MOBILE) */
+    .menu-toggle {
+        display: none; /* Esconde no desktop */
+        position: absolute;
+        top: 0;
+        right: 0;
+        cursor: pointer;
+        padding: 4px;
+        background: #fff;
+        border: none;
+        border-radius: 0 8px 0 8px;
+        z-index: 1001;
+    }
+    .menu-toggle .material-icons {
+        font-size: 24px;
+        color: #4285F4;
+        vertical-align: middle;
+    }
+    
+    /* Outros estilos de popups e ícones */
+    .popup-calc { margin-top:8px; padding-top:6px; border-top:1px dashed #ccc; }
+    .small-btn { display:inline-block;padding:4px 8px;margin-top:6px;border-radius:4px;border:0;background:#4285F4;color:#fff;cursor:pointer }
+    .subpref { font-weight: bold; font-size: 10px; display: block; margin-top: 2px; color: #666; }
+    .gesso-info { color: #F4B400; font-weight: bold; font-size: 11px; margin-top: 4px; display: block; }
+    
+    .custom-div-icon {
+        background: none;
+        border: none;
+        text-align: center;
+    }
+    .default-icon-svg { fill: #4285F4; stroke: #fff; stroke-width: 1; }
+    .gesso-icon-svg { fill: #F4B400; stroke: #fff; stroke-width: 1; }
+
+    /* ======================================================= */
+    /* MÍDIA QUERY PARA SMARTPHONES (Largura máxima de 500px) */
+    /* ======================================================= */
+    @media (max-width: 500px) {
+        
+        /* MOSTRA O BOTÃO DE TOGGLE */
+        .menu-toggle {
+            display: block; 
+        }
+        
+        /* CORREÇÃO: AJUSTE PARA O TÍTULO/CONTEÚDO NÃO SER COBERTO PELO BOTÃO DE TOGGLE */
+        .controls h4, .calc-panel h4 {
+            margin-top: 40px; /* Aumentado para 40px para garantir que o título e a primeira label fiquem abaixo do botão de toggle */
+        }
+
+        /* LARGURA REDUZIDA E POSIÇÃO FIXA DOS PAINÉIS */
+        .controls, .calc-panel {
+            width: 200px; 
+            max-width: 200px;
+            left: 10px;
+            right: auto; 
+            padding: 8px;
+        }
+
+        /* AJUSTE DE POSICIONAMENTO PARA O PAINEL DE CONTROLES */
+        .controls {
+            top: 10px;
+        }
+
+        /* AJUSTE DE POSICIONAMENTO PARA O PAINEL DA CALCULADORA */
+        .calc-panel {
+            bottom: 10px;
+        }
+        
+        /* ESTADO RECOLHIDO (PAINEL ESCONDIDO) */
+        .controls.collapsed, .calc-panel.collapsed {
+            /* Move o painel para a esquerda, escondendo-o */
+            transform: translateX(calc(-100% + 40px)); /* move para fora + 40px para manter o toggle visível */
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            /* Garante que o toggle fique visível na borda */
+            border-radius: 0 8px 8px 0; 
+            padding-right: 40px; 
+        }
+
+        /* ESTADO EXPANDIDO (PAINEL VISÍVEL) */
+        .controls, .calc-panel {
+            transform: translateX(0);
+        }
+    }
+  </style>
+</head>
+<body onload="checkMobileWarning()">
+
+  <div id="map"></div>
+  
+  <div class="controls" id="controls">
+    <button class="menu-toggle" onclick="togglePanel('controls', this)">
+      <i class="material-icons">menu</i>
+    </button>
+    
+    <h4>Opções & Filtros</h4>
+
+    <button id="btnLocate">📍 Minha localização</button>
+
+    <label for="filter">Filtrar por material:</label>
+    <select id="filter">
+      <option value="todos">Mostrar todos</option>
+      <option value="reciclaveis">Recicláveis</option>
+      <option value="eletronicos">Eletroeletrônicos</option>
+      <option value="oleo">Óleo</option>
+      <option value="entulho">Entulho/Volumosos</option>
+      <option value="madeira">Madeira</option>
+      <option value="gesso">Gesso</option>
+    </select>
+
+    <label for="search">Buscar (endereço / bairro):</label>
+    <input id="search" placeholder="ex: Mooca, SP" type="text" />
+    
+    <button id="btnSearch">🔎 Buscar</button>
+    <button id="btnClear">Limpar rota/pesquisa</button>
+  </div>
+  
+  <ul id="suggestions-list"></ul>
+
+
+  <div class="calc-panel" id="calcPanel">
+    <button class="menu-toggle" onclick="togglePanel('calcPanel', this)">
+      <i class="material-icons">menu</i>
+    </button>
+    
+    <h4>Calculadora Ecológica</h4>
+    <label>Peso (kg)</label>
+    <input type="number" id="calcPeso" min="0" step="0.1" value="1">
+    <label>Material</label>
+    <select id="calcMaterial">
+      <option value="papel">Papel</option>
+      <option value="plastico">Plástico</option>
+      <option value="vidro">Vidro</option>
+      <option value="metal">Metal</option>
+      <option value="eletronicos">Eletroeletrônicos</option>
+      <option value="oleo">Óleo</option>
+      <option value="gesso">Gesso</option>
+    </select>
+    <button id="btnCalc">Calcular impacto</button>
+
+    <div id="calcResult" style="margin-top:8px;font-size:14px;color:#333"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    
+    // ---------- LÓGICA DE VISIBILIDADE (MENU HAMBURGUER) ----------
+    function togglePanel(panelId, button) {
+        const panel = document.getElementById(panelId);
+        panel.classList.toggle('collapsed');
+
+        const icon = button.querySelector('.material-icons');
+        // Muda o ícone: 'menu' (abrir) ou 'close' (fechar)
+        if (panel.classList.contains('collapsed')) {
+            icon.textContent = 'menu';
+        } else {
+            icon.textContent = 'close';
+        }
+    }
+
+    // ---------- LÓGICA DO POPUP DO ANDROID/HTTPS ----------
+    function checkMobileWarning() {
+        if (window.innerWidth <= 500) {
+            alert("⚠️ Atenção (Localização Android): Para que a função 'Minha localização' funcione no Chrome/Android, o mapa deve ser acessado via HTTPS (conexão segura). Permissão negada geralmente indica bloqueio de segurança.");
+            
+            // Inicia os painéis recolhidos no mobile para dar mais foco ao mapa
+            document.getElementById('controls').classList.add('collapsed');
+            document.getElementById('calcPanel').classList.add('collapsed');
+        }
+    }
+
+
+    // ---------- DADOS COMPLETOS DOS ECOPONTOS (126 Pontos - Lista COMPLETA) ----------
+    const pontos = [
+      // Subprefeitura Aricanduva
+      { id:1, nome:"Viaduto Engenheiro Alberto Badra", subpref: "Aricanduva", endereco:"Avenida Aricanduva, nº 200 - Praça Lúcia Mekhitarian – Bairro: Aricanduva (baixo do Viaduto Engenheiro Alberto Badra) - CEP: 03501-010", lat:-23.553941, lng:-46.516801, materiais:["reciclaveis","entulho","gesso"] },
+      { id:2, nome:"Astarte", subpref: "Aricanduva", endereco:"Rua Astarte, nº 500 – Bairro: Vila Carrão - CEP: 03446-090", lat:-23.568466, lng:-46.526270, materiais:["reciclaveis","entulho","gesso"] },
+      { id:3, nome:"Nova York", subpref: "Aricanduva", endereco:"Rua Amélia Vanso Magnoli, nº 480 – Bairro: Conjunto Habitacional Barreira Grande - CEP: 03907-010", lat:-23.606540, lng:-46.529240, materiais:["reciclaveis","entulho","madeira"] },
+      { id:4, nome:"Aricanduva", subpref: "Aricanduva", endereco:"Rua Professor Alzira de Oliveira Gilioli, nº 400 – Bairro: Jardim Nice - CEP: 03905-090", lat:-23.604113, lng:-46.495034, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Butantã
+      { id:5, nome:"Jardim Maria do Carmo", subpref: "Butantã", endereco:"Rua Caminho do Engenho, nº 800 – Bairro: Ferreira - CEP: 05524-000", lat:-23.606670, lng:-46.757077, materiais:["reciclaveis","entulho","madeira"] },
+      { id:6, nome:"Jardim Jaqueline", subpref: "Butantã", endereco:"Parque Raposo Tavares - Rua Walter Brito Belletti, s/nº - Bairro: Vila Albano - CEP: 05543-040", lat:-23.593855, lng:-46.772599, materiais:["reciclaveis","entulho","gesso"] },
+      { id:7, nome:"Politécnica", subpref: "Butantã", endereco:"Rua Paulino Baptista Conti, nº 2 – Bairro: Jardim Sarah - CEP: 05382-140", lat:-23.578676, lng:-46.745427, materiais:["reciclaveis","entulho","madeira"] },
+      { id:8, nome:"Giovani Gronchi", subpref: "Butantã", endereco:"Avenida Giovani Gronchi, nº 3413 – Bairro: Morumbi - CEP: 05651-002", lat:-23.612040, lng:-46.721461, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Campo Limpo
+      { id:9, nome:"Santo Dias", subpref: "Campo Limpo", endereco:"Travessa Rosifloras, nº 301 – Bairro: Conjunto Habitacional Instituto Adventista - CEP: 05868-600", lat:-23.684120, lng:-46.766782, materiais:["reciclaveis","entulho","madeira"] },
+      { id:10, nome:"Parque Fernanda", subpref: "Campo Limpo", endereco:"Avenida Doutor Salvador Rocco, nº 261, defronte Rua Antônio Cânon – Bairro: Parque Fernanda - CEP: 05888-050", lat:-23.700143, lng:-46.791557, materiais:["reciclaveis","entulho","madeira"] },
+      { id:11, nome:"Olinda", subpref: "Campo Limpo", endereco:"Rua Nelson Brissac, nº 1235, esquina com Avenida Padre Adolfo Kolping – Bairro: Parque Regina - CEP: 05773-110", lat:-23.665780, lng:-46.790934, materiais:["reciclaveis","entulho","madeira"] },
+      { id:12, nome:"Vila das Belezas", subpref: "Campo Limpo", endereco:"Rua Campo Novo do Sul, nº 500 – Bairro: Vila Andrade - CEP: 05729-100", lat:-23.655827, lng:-46.738870, materiais:["reciclaveis","entulho","gesso"] },
+      { id:13, nome:"Paraisópolis", subpref: "Campo Limpo", endereco:"Rua Irapará, nº 73 – Bairro: Paraíso do Morumbi - CEP: 05706-300", lat:-23.613697, lng:-46.720815, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Capela do Socorro
+      { id:14, nome:"Cidade Saudável", subpref: "Capela do Socorro", endereco:"Rua Ptolomeu, nº 869 – Bairro: Vila Socorro - CEP: 04762-040", lat:-23.688175, lng:-46.685352, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Casa Verde/Limão/Cachoeirinha
+      { id:15, nome:"Parque Peruche", subpref: "Casa Verde/Limão/Cachoeirinha", endereco:"Avenida Engenheiro Caetano Álvares, nº 3142 – Bairro: Parque Peruche - CEP: 02535-008", lat:-23.498418, lng:-46.643809, materiais:["reciclaveis","entulho","madeira"] },
+      { id:16, nome:"Vila Nova Cachoeirinha", subpref: "Casa Verde/Limão/Cachoeirinha", endereco:"Rua Felix Alves Pereira, nº 113 – Bairro: Jardim Centenário - CEP: 02882-030", lat:-23.473539, lng:-46.666993, materiais:["reciclaveis","entulho","madeira"] },
+      { id:17, nome:"Vila Santa Maria", subpref: "Casa Verde/Limão/Cachoeirinha", endereco:"Rua André Bolsena com a Travessa Luiz Sá – Bairro Vila Santista - CEP: 02560-170", lat:-23.470505, lng:-46.634673, materiais:["reciclaveis","entulho","madeira"] },
+      { id:18, nome:"Jardim Antártica", subpref: "Casa Verde/Limão/Cachoeirinha", endereco:"Rua Dom Aquino, nº 103 – Bairro: Jardim Antártica - CEP: 02652-170", lat:-23.469176, lng:-46.671378, materiais:["reciclaveis","entulho","madeira"] },
+      { id:19, nome:"São Leandro", subpref: "Casa Verde/Limão/Cachoeirinha", endereco:"Rua São Leandro, nº 13 – Bairro: Vila Palmeiras - CEP: 02725-010", lat:-23.504996, lng:-46.674997, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Cidade Ademar
+      { id:20, nome:"Alvarenga", subpref: "Cidade Ademar", endereco:"Estrada do Alvarenga, nº 2475 – Bairro: Balneário Mar Paulista - CEP: 04467-000", lat:-23.729790, lng:-46.635887, materiais:["reciclaveis","entulho","madeira"] },
+      { id:21, nome:"Cupecê", subpref: "Cidade Ademar", endereco:"Rua Anália Maria de Jesus, nº 130 – Trav. Av. Cupecê – Bairro: Jardim Itacolomi - CEP: 04385-110", lat:-23.670692, lng:-46.653457, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Cidade Tiradentes
+      { id:22, nome:"Nascer do Sol", subpref: "Cidade Tiradentes", endereco:"Rua Nascer do Sol, nº 356 – Bairro: Conjunto Habitacional Santa Etelvina II - CEP: 08485-020", lat:-23.585189, lng:-46.406987, materiais:["reciclaveis","entulho","madeira"] },
+      { id:23, nome:"Setor G", subpref: "Cidade Tiradentes", endereco:"Rua Alfonso Asturaro, altura do nº 600 – Bairro: Conjunto Habitacional Barro Branco II - CEP: 08473-591", lat:-23.593026, lng:-46.398014, materiais:["reciclaveis","entulho","madeira"] },
+      { id:24, nome:"Inácio Monteiro", subpref: "Cidade Tiradentes", endereco:"Rua Regresso Feliz, nº 1190 - Bairro: Conjunto Habitacional Inácio Monteiro - CEP: 08472-210", lat:-23.588880, lng:-46.438510, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Ermelino Matarazzo
+      { id:25, nome:"Jardim São Nicolau", subpref: "Ermelino Matarazzo", endereco:"Rua Agreste de Itabaiana, nº 590, esquina com a Rua Eduardo Kyioshi Shimuta – Bairro: Vila União (Zona Leste) - CEP: 03683-000", lat:-23.535031, lng:-46.460830, materiais:["reciclaveis","entulho","madeira"] },
+      { id:26, nome:"Boturussu", subpref: "Ermelino Matarazzo", endereco:"Rua Nélio Batista Guimarães, nº 183 – Bairro: Parque Boturussu - CEP: 03802-005", lat:-23.509740, lng:-46.486660, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Freguesia do Ó / Brasilândia
+      { id:27, nome:"Bandeirantes", subpref: "Freguesia do Ó / Brasilândia", endereco:"Rua Itaiquara, nº 237 - Bairro: Itaberaba - CEP: 02803-050", lat:-23.474668, lng:-46.702758, materiais:["reciclaveis","entulho","madeira"] },
+      { id:28, nome:"Freguesia do Ó", subpref: "Freguesia do Ó / Brasilândia", endereco:"Rua Sousa Filho, nº 690 – Bairro: Vila União (Zona Norte) - CEP: 02911-135", lat:-23.500588, lng:-46.697486, materiais:["reciclaveis","entulho","madeira"] },
+      { id:29, nome:"Vila Rica", subpref: "Freguesia do Ó / Brasilândia", endereco:"Rua Jorge Mamede da Silva, nº 200 – Bairro: Vila Souza - CEP: 02860-050", lat:-23.460193, lng:-46.711884, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Guaianases
+      { id:30, nome:"Jardim São Paulo", subpref: "Guaianases", endereco:"Rua Utaro Kanai, nº 374 – Bairro: Conjunto Habitacional Juscelino Kubitschek - CEP: 08465-000", lat:-23.565886, lng:-46.405788, materiais:["reciclaveis","entulho","madeira"] },
+      { id:31, nome:"Guaiaponto", subpref: "Guaianases", endereco:"Rua da Passagem Funda, nº 250 – Bairro: Vila Santa Cruz (Zona Leste) - CEP: 08411-010", lat:-23.541481, lng:-46.401140, materiais:["reciclaveis","entulho","gesso"] },
+      { id:32, nome:"Lajeado", subpref: "Guaianases", endereco:"Rua Isabela, nº405 – Bairro: Jardim Lajeado - CEP: 08411-010", lat:-23.544520, lng:-46.398851, materiais:["reciclaveis","entulho","madeira"] },
+      { id:33, nome:"Padre Nildo do Amaral", subpref: "Guaianases", endereco:"Rua Padre Nildo do Amaral Júnior, nº 900 – Bairro: Vila Nova Curuçá - CEP: 08032-650", lat:-23.508600, lng:-46.392211, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Ipiranga
+      { id:34, nome:"Tereza Cristina", subpref: "Ipiranga", endereco:"Rua Tereza Cristina, nº 10, esquina com Avenida do Estado – Bairro: Vila Monumento - CEP: 01553-000", lat:-23.570773, lng:-46.613386, materiais:["reciclaveis","entulho","gesso"] },
+      { id:35, nome:"Santa Cruz", subpref: "Ipiranga", endereco:"Rua Santa Cruz, nº 1452 (Baixo do Viaduto Santa Cruz) – Bairro: Vila Mariana - CEP: 04122-000", lat:-23.597500, lng:-46.629160, materiais:["reciclaveis","entulho","madeira"] },
+      { id:36, nome:"Vila das Mercês", subpref: "Ipiranga", endereco:"Rua Italva, nº 86 – Bairro: Saúde - CEP: 04294-030", lat:-23.619076, lng:-46.626895, materiais:["reciclaveis","entulho","madeira"] },
+      { id:37, nome:"Comandante Taylor", subpref: "Ipiranga", endereco:"Rua Comandante Taylor, nº 690 (Baixo do Viaduto Comandante Taylor) – Bairro: Ipiranga - CEP: 04218-000", lat:-23.587884, lng:-46.602526, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Itaim Paulista
+      { id:38, nome:"Moreira", subpref: "Itaim Paulista", endereco:"Rua João Batista de Godói, nº 1164 – Bairro: Jardim das Oliveiras - CEP: 08111-430", lat:-23.518659, lng:-46.380486, materiais:["reciclaveis","entulho","madeira"] },
+      { id:39, nome:"Mãe Preta", subpref: "Itaim Paulista", endereco:"Avenida Dama Entre Verdes, nº 21, - Bairro: Vila Curuçá - CEP: 08030-610", lat:-23.493922, lng:-46.398495, materiais:["reciclaveis","entulho","gesso"] },
+      { id:40, nome:"Pesqueiro", subpref: "Itaim Paulista", endereco:"Rua Caiuás, nº 18, esquina com a Avenida Itamerendiba – Bairro: Jardim Ida Guedes - CEP: 08120-580", lat:-23.535174, lng:-46.377042, materiais:["reciclaveis","entulho","gesso"] },
+      { id:41, nome:"Flamingo", subpref: "Itaim Paulista", endereco:"Rua Alexandre Dias Nogueira, nº353 – Bairro: Vila Nova Curuçá - CEP: 08031-240", lat:-23.493208, lng:-46.406604, materiais:["reciclaveis","entulho","madeira"] },
+      { id:42, nome:"Itaim Paulista", subpref: "Itaim Paulista", endereco:"Rua Barão de Almeida Galeão, altura do nº61 – Bairro: Itaim Paulista - CEP: 08575-210", lat:-23.509796, lng:-46.368685, materiais:["reciclaveis","entulho","madeira"] },
+      { id:43, nome:"Jardim Indaiá", subpref: "Itaim Paulista", endereco:"Rua Rossini Pinto, altura do nº 214 – Bairro: Jardim Indaiá - CEP: 08143-030", lat:-23.574673, lng:-46.393430, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Itaquera
+      { id:44, nome:"Parque Guarani", subpref: "Itaquera", endereco:"Rua Manuel Alves da Rocha, nº 584 – Bairro: Parque Guarani - CEP: 08235-620", lat:-23.535574, lng:-46.452605, materiais:["reciclaveis","entulho","madeira"] },
+      { id:45, nome:"Oswaldo Valle Cordeiro", subpref: "Itaquera", endereco:"Av. Osvaldo Valle Cordeiro, nº 405 – Bairro: Jardim Brasília (Zona Leste) - CEP: 03584-000", lat:-23.548488, lng:-46.481617, materiais:["reciclaveis","entulho","gesso"] },
+      { id:46, nome:"Cidade Lider", subpref: "Itaquera", endereco:"Rua Charles Manguin, nº 20- Bairro: Jardim Marília - CEP: 03579-150", lat:-23.565637, lng:-46.485295, materiais:["reciclaveis","entulho","madeira"] },
+      { id:47, nome:"Parque do Carmo", subpref: "Itaquera", endereco:"Rua Machado Nunes, nº 95 – Bairro: Jardim Nossa Senhora do Carmo - CEP: 08275-310", lat:-23.578652, lng:-46.471415, materiais:["reciclaveis","entulho","madeira"] },
+      { id:48, nome:"Corinthians", subpref: "Itaquera", endereco:"Rua Ana Perena, nº 155 – Bairro: Conjunto Residencial José Bonifácio - CEP: 08253-230", lat:-23.545890, lng:-46.441838, materiais:["reciclaveis","entulho","gesso"] },
+      { id:49, nome:"Caldeirão", subpref: "Itaquera", endereco:"Rua Major Vitorino de Souza Rocha, altura do nº148 – Bairro: Vila Santa Teresinha - CEP: 08247-080", lat:-23.536768, lng:-46.435640, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Jabaquara
+      { id:50, nome:"Imigrantes", subpref: "Jabaquara", endereco:"Rua Opixe - Bairro: Vila Guarani (Zona Sul) - CEP: 04312-080", lat:-23.642055, lng:-46.628864, materiais:["reciclaveis","entulho","gesso"] },
+      { id:51, nome:"Jabaquara", subpref: "Jabaquara", endereco:"Rua Jupatis, nº140 – Bairro: Vila Mira - CEP: 04377-200", lat:-23.666989, lng:-46.643356, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Jaçanã/Tremembé
+      { id:52, nome:"Anselmo Machado", subpref: "Jaçanã/Tremembé", endereco:"Avenida Paulo Lincoln do Valle Pontin, altura do nº 550 – Bairro: Jaçanã - CEP: 02273-011", lat:-23.454992, lng:-46.577536, materiais:["reciclaveis","entulho","madeira"] },
+      { id:53, nome:"Silvio Bittencourt", subpref: "Jaçanã/Tremembé", endereco:"Rua Maria Amália Lopes Azevedo, nº 4008 – Bairro: Vila Albertina - CEP: 02350-003", lat:-23.447548, lng:-46.611186, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Lapa
+      { id:54, nome:"Viaduto Antártica", subpref: "Lapa", endereco:"Rua Robert Bosch (Baixos Viaduto Antártica) – Bairro: Parque Industrial Tomas Edson - CEP: 01141-010", lat:-23.527375, lng:-46.678250, materiais:["reciclaveis","entulho","madeira"] },
+      { id:55, nome:"Vila Jaguara", subpref: "Lapa", endereco:"Rua Agrestina, nº 189 – Bairro: Vila Jaguara - CEP: 05117-100", lat:-23.504944, lng:-46.758079, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura M'Boi Mirim
+      { id:56, nome:"Piraporinha", subpref: "M'Boi Mirim", endereco:"Rua João de Abreu, nº326 – Bairro: Jardim Tupã - CEP: 04904-000", lat:-23.731778, lng:-46.764491, materiais:["reciclaveis","entulho","gesso"] },
+      { id:57, nome:"São Luis", subpref: "M'Boi Mirim", endereco:"Rua Pedro Armani, nº 252 – Bairro: Jardim Letícia - CEP: 05820-220", lat:-23.682859, lng:-46.763467, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Mooca
+      { id:58, nome:"Bresser", subpref: "Mooca", endereco:"Pça. Giuseppe Cesari, nº 54 (Baixo do Viaduto Bresser) – Bairro: Brás - CEP: 03053-000", lat:-23.559981, lng:-46.618640, materiais:["reciclaveis","entulho","gesso"] },
+      { id:59, nome:"Tatuapé", subpref: "Mooca", endereco:"Avenida Salim Farah Maluf, nº 179, Praça Tito Lívio Ferreira (Central de Triagem) – Bairro: Tatuapé - CEP:03076-000", lat:-23.546955, lng:-46.573983, materiais:["reciclaveis","entulho","gesso"] },
+      { id:60, nome:"Brás", subpref: "Mooca", endereco:"Avenida Presidente Wilson, nº 1 (Baixo Viaduto Professor Alberto Mesquita de Carvalho) – Bairro: Mooca - CEP: 03107-000", lat:-23.555562, lng:-46.608359, materiais:["reciclaveis","entulho","madeira"] },
+      { id:61, nome:"Mooca", subpref: "Mooca", endereco:"Avenida Pires do Rio, nº 600 (Baixo Viaduto Bresser) – Bairro: Belenzinho - CEP: 03163-010", lat:-23.555230, lng:-46.609404, materiais:["reciclaveis","entulho","madeira"] },
+      { id:62, nome:"Pari", subpref: "Mooca", endereco:"Avenida Carlos de Campos, nº 996 (defronte), esquina com Avenida Presidente Castelo Branco – Bairro: Pari - CEP: 03028-001", lat:-23.539827, lng:-46.611599, materiais:["reciclaveis","entulho","madeira"] },
+      { id:63, nome:"Belém", subpref: "Mooca", endereco:"Rua Belarmino Matos, nº 26 (baixos do Viaduto Guadalajara) – Bairro: Belenzinho - CEP: 03062-030", lat:-23.552906, lng:-46.600984, materiais:["reciclaveis","entulho","madeira"] },
+      { id:64, nome:"Vila Luisa", subpref: "Mooca", endereco:"Praça Dante Maron, nº 92 (Baixos Viaduto Engenheiro Alberto Badra) – Bairro: Guaiúna - CEP: 03631-230", lat:-23.553941, lng:-46.516801, materiais:["reciclaveis","entulho","gesso"] },
+      { id:65, nome:"Água Rasa", subpref: "Mooca", endereco:"Av. Salim Farah Maluf, nº 1500 – Bairro: Quarta Parada - CEP: 03304-090", lat:-23.551608, lng:-46.582877, materiais:["reciclaveis","entulho","gesso"] },
+      { id:66, nome:"Mendes Caldeira", subpref: "Mooca", endereco:"Rua Monsenhor Andrade, nº 865 – Bairro: Brás - CEP: 03008-000", lat:-23.549221, lng:-46.620076, materiais:["reciclaveis","entulho","madeira"] },
+      { id:67, nome:"Mooca ll", subpref: "Mooca", endereco:"Rua Pantojo, nº 1.147 – Bairro: Vila Regente Feijó - CEP: 03343-000", lat:-23.568600, lng:-46.577531, materiais:["reciclaveis","entulho","madeira"] },
+      { id:68, nome:"Condessa", subpref: "Mooca", endereco:"Avenida Condessa Elizabeth de Robiano, altura do nº 930 – Bairro: Parque São Jorge", lat:-23.518600, lng:-46.581561, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Penha
+      { id:69, nome:"Penha I", subpref: "Penha", endereco:"Rua Doutor. Heládio, nº 104 – Bairro: Vila Esperança - CEP: 03650-020", lat:-23.538578, lng:-46.541280, materiais:["reciclaveis","entulho","madeira"] },
+      { id:70, nome:"Tiquatira", subpref: "Penha", endereco:"Rua Amorim Diniz, nº 415 – Bairro: Jardim Jaú (Zona Leste) - CEP: 03730-040", lat:-23.509747, lng:-46.505701, materiais:["reciclaveis","entulho","madeira"] },
+      { id:71, nome:"Gamelinha", subpref: "Penha", endereco:"Rua Morfeu, nº 25, esquina com Avenida Edgar dos Santos – Bairro: Jardim Santo Antônio - CEP: 03554-000", lat:-23.556223, lng:-46.517379, materiais:["reciclaveis","entulho","madeira"] },
+      { id:72, nome:"Vila Matilde", subpref: "Penha", endereco:"Rua Mateus de Siqueira, nº 375, com Praça Leonildes Ramos Saigo - Bairro: Jardim Triana - CEP: 03554-000", lat:-23.556223, lng:-46.517379, materiais:["reciclaveis","entulho","madeira"] },
+      { id:73, nome:"Cangaíba", subpref: "Penha", endereco:"Rua Luciano Nogueira, altura do nº 241 – Bairro: Cangaíba - CEP: 03721-080", lat:-23.515250, lng:-46.507850, materiais:["reciclaveis","entulho","madeira"] },
+      { id:74, nome:"Franquinho", subpref: "Penha", endereco:"Rua Praia de Mucuripe, nº 685 – Bairro: Jardim Artur Alvim - CEP: 03687-100", lat:-23.555430, lng:-46.495200, materiais:["reciclaveis","entulho","madeira"] },
+      { id:75, nome:"Dalila", subpref: "Penha", endereco:"Rua Inacio da Costa nº 740, esquina com a Avenida Aricanduva – Bairro: Vila Dalila - CEP: 03520-030", lat:-23.578613, lng:-46.518593, materiais:["reciclaveis","entulho","madeira"] },
+      { id:76, nome:"COHAB Artur Alvim", subpref: "Penha", endereco:"Avenida. Padre Estanislau de Campos nº 56 – Bairro: Conjunto Habitacional Padre Manoel da Nóbrega - CEP: 03590-060", lat:-23.554041, lng:-46.476483, materiais:["reciclaveis","entulho","madeira"] },
+      { id:77, nome:"Vila Talarico", subpref: "Penha", endereco:"Avenida Bernardino Brito Fonseca de Carvalho, nº 1.050 – Bairro: Vila Talarico - CEP: 03535-000", lat:-23.543452, lng:-46.506544, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Perus
+      { id:78, nome:"Recanto dos Humildes", subpref: "Perus", endereco:"Rua Sales Gomes, nº 415 – Bairro: Vila Perus - CEP: 05211-200", lat:-23.407955, lng:-46.757041, materiais:["reciclaveis","entulho","madeira"] },
+      { id:79, nome:"Jardim Santa Fé", subpref: "Perus", endereco:"Rua Salvador Albano nº156 – Bairro: Jardim Santa Fé (Zona Oeste) - CEP: 05271-090", lat:-23.414341, lng:-46.791557, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Pinheiros
+      { id:80, nome:"Pinheiros", subpref: "Pinheiros", endereco:"Praça do Cancioneiro, nº 15 (Baixos da Ponte Engenheiro Ary Torres) – Bairro: Cidade Monções - CEP: 04571-200", lat:-23.593679, lng:-46.685376, materiais:["reciclaveis","entulho","gesso"] },
+      { id:81, nome:"Vila Madalena", subpref: "Pinheiros", endereco:"Rua Girassol, nº 15, esquina Rua Luís Murat – Bairro: Vila Madalena - CEP: 05433-000", lat:-23.552178, lng:-46.702758, materiais:["reciclaveis","entulho","madeira"] },
+      { id:82, nome:"Alto de Pinheiros", subpref: "Pinheiros", endereco:"Praça Arcipreste Anselmo de Oliveira – Bairro: Alto de Pinheiros - CEP: 05463-080", lat:-23.547141, lng:-46.708846, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Pirituba/ Jaraguá
+      { id:83, nome:"Cônego José Salomon", subpref: "Pirituba/ Jaraguá", endereco:"Avenida. Cônego José Salomon, nº 861 – Bairro: Vila Portugal - CEP: 02918-170", lat:-23.473539, lng:-46.690800, materiais:["reciclaveis","entulho","gesso"] },
+      { id:84, nome:"Vigário Godói", subpref: "Pirituba/ Jaraguá", endereco:"Rua Vigário Godói, nº 480 – Bairro: Vila Zat - CEP: 02976-080", lat:-23.468257, lng:-46.711884, materiais:["reciclaveis","entulho","gesso"] },
+      { id:85, nome:"Voith", subpref: "Pirituba/ Jaraguá", endereco:"Avenida Atílio Brugnoli, nº 489 – Bairro: Parque Nações Unidas - CEP: 02996-010", lat:-23.444983, lng:-46.744185, materiais:["reciclaveis","entulho","madeira"] },
+      { id:86, nome:"Alexios Jafet", subpref: "Pirituba/ Jaraguá", endereco:"Rua Alexios Jafet, nº 233 – Bairro: Jardim Ipanema (Zona Oeste) - CEP: 05187-010", lat:-23.474668, lng:-46.732952, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Santana/ Tucuruvi
+      { id:87, nome:"Tucuruvi", subpref: "Santana/ Tucuruvi", endereco:"Rua Eduardo Vicente Nasser, nº 519 – Bairro: Barro Branco (Zona Norte) - CEP: 02344-050", lat:-23.465529, lng:-46.608359, materiais:["reciclaveis","entulho","madeira"] },
+      { id:88, nome:"Santana", subpref: "Santana/ Tucuruvi", endereco:"Avenida Zaki Narchi, nº375 – Bairro: Carandiru - CEP: 02029-000", lat:-23.520846, lng:-46.623199, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Santo Amaro
+      { id:89, nome:"Alceu Maynard de Araújo", subpref: "Santo Amaro", endereco:"Avenida Professor Alceu Maynard de Araújo, nº 330 - ao lado da Central de Triagem – Bairro Vila Cruzeiro - CEP: 04728-110", lat:-23.655827, lng:-46.707310, materiais:["reciclaveis","entulho","madeira"] },
+      { id:90, nome:"Vicente Rao", subpref: "Santo Amaro", endereco:"Avenida Vicente Rao, nº 308 sentido Diadema (Baixo do Viaduto José Diniz) – Bairro: Jardim Petrópolis - CEP: 04636-000", lat:-23.626780, lng:-46.685352, materiais:["reciclaveis","entulho","gesso"] },
+      { id:91, nome:"Pedro Bueno", subpref: "Santo Amaro", endereco:"Rua João de Lery, altura do nº 503 – Bairro: Parque Jabaquara - CEP: 04356-030", lat:-23.656515, lng:-46.643356, materiais:["reciclaveis","entulho","gesso"] },
+      { id:92, nome:"Vitor Manzini", subpref: "Santo Amaro", endereco:"Praça Dom Francisco de Sousa, nº 635 – Bairro: Santo Amaro - CEP: 04745-050", lat:-23.666989, lng:-46.703478, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura São Mateus
+      { id:93, nome:"Cipoaba", subpref: "São Mateus", endereco:"Rua Padre Luis de Siqueira, nº 947, com Avenida Rodolfo Pirani - Bairro: Jardim Rodolfo Pirani - CEP: 08310-260", lat:-23.619076, lng:-46.452605, materiais:["reciclaveis","entulho","madeira"] },
+      { id:94, nome:"Iguatemi", subpref: "São Mateus", endereco:"Rua Francisco de Melo Palheta, nº1548 – Bairro: Parque Boa Esperança - CEP: 08341-235", lat:-23.606540, lng:-46.403577, materiais:["reciclaveis","entulho","madeira"] },
+      { id:95, nome:"Montalvania", subpref: "São Mateus", endereco:"Rua Montalvania nº 195 – Bairro: Jardim São Cristóvão - CEP:03930-095", lat:-23.605389, lng:-46.529240, materiais:["reciclaveis","entulho","gesso"] },
+      { id:96, nome:"Lima Bonfante", subpref: "São Mateus", endereco:"Rua Capitão-mor Lázaro da Costa, nº 251 – Bairro: Jardim São Francisco - CEP: 08390-260", lat:-23.620002, lng:-46.406987, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura São Miguel Paulista
+      { id:97, nome:"Imperador", subpref: "São Miguel Paulista", endereco:"Avenida. Ribeirão Jacu, nº 201 (Baixo do Viaduto Jacu Pêssego) – Bairro: Jardim das Camélias - CEP: 08050-420", lat:-23.535031, lng:-46.425114, materiais:["reciclaveis","entulho","madeira"] },
+      { id:98, nome:"Carlito Maia", subpref: "São Miguel Paulista", endereco:"Rua Domingos Fernandes Nobre, nº 109 – Bairro: Vila Itaim - CEP: 08190-300", lat:-23.518659, lng:-46.401140, materiais:["reciclaveis","entulho","madeira"] },
+      { id:99, nome:"Pedro Nunes", subpref: "São Miguel Paulista", endereco:"Rua da Polka, nº 100 – Bairro: Jardim Pedro José Nunes - CEP: 08061-540", lat:-23.504944, lng:-46.406604, materiais:["reciclaveis","entulho","madeira"] },
+      { id:100, nome:"Itaqueruna", subpref: "São Miguel Paulista", endereco:"Rua Domitila d'Abril, nº 88 - Bairro: Cidade Nova São Miguel - CEP: 08042-550", lat:-23.509740, lng:-46.438510, materiais:["reciclaveis","entulho","gesso"] },
+      { id:101, nome:"Varre Vila", subpref: "São Miguel Paulista", endereco:"Rua Primeiro de Maio, defronte nº 106 – Bairro: União de Vila Nova - CEP: 08072-050", lat:-23.504996, lng:-46.435640, materiais:["reciclaveis","entulho","madeira"] },
+      { id:102, nome:"Vitória Popular", subpref: "São Miguel Paulista", endereco:"Rua El Rey nº 508 – Bairro: Jardim São Carlos (Zona Leste) - CEP: 08062-520", lat:-23.520846, lng:-46.405788, materiais:["reciclaveis","entulho","madeira"] },
+      { id:103, nome:"Jardim Helena", subpref: "São Miguel Paulista", endereco:"Rua Cosme dos Santos, nº 110 – Bairro: Jardim Helena - CEP: 08090-753", lat:-23.493922, lng:-46.403577, materiais:["reciclaveis","entulho","gesso"] },
+      { id:104, nome:"Jardim Romano", subpref: "São Miguel Paulista", endereco:"Rua Duarte Martins Mourão, nº 400 – Bairro: Jardim Santa Margarida - CEP: 08191-250", lat:-23.509796, lng:-46.380486, materiais:["reciclaveis","entulho","madeira"] },
+      { id:105, nome:"Jardim Lapena", subpref: "São Miguel Paulista", endereco:"Rua Rafael Zimbard, altura do nº78 – Bairro Jardim Nair - CEP: 08071-130", lat:-23.515250, lng:-46.392211, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Sapopemba
+      { id:106, nome:"Sapopemba", subpref: "Sapopemba", endereco:"Rua Francesco Usper, nº 550 – Bairro Conjunto Habitacional Teotonio Vilela - CEP: 03928-235", lat:-23.607425, lng:-46.526270, materiais:["reciclaveis","entulho","madeira"] },
+      { id:107, nome:"Vila Cardoso Franco", subpref: "Sapopemba", endereco:"Rua dos Vorás, nº 25 – Bairro: Conjunto Residencial Sitio Oratório - CEP: 03978-310", lat:-23.612040, lng:-46.505701, materiais:["reciclaveis","entulho","madeira"] },
+      { id:108, nome:"Reynaldo José", subpref: "Sapopemba", endereco:"Rua Silvestro Silvestre, nº 400 – Bairro: Jardim Ângela (Zona Leste) - CEP: 03985-000", lat:-23.604113, lng:-46.485295, materiais:["reciclaveis","entulho","madeira"] },
+      { id:109, nome:"Joaquim Catuna", subpref: "Sapopemba", endereco:"Rua Luca Conforti, nº210 - Bairro Fazenda da Juta - CEP: 03977-417", lat:-23.613697, lng:-46.495200, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Sé
+      { id:110, nome:"Glicério", subpref: "Sé", endereco:"Praça Ministro Francisco Sá Carneiro, nº 6 (Baixos do Viaduto Glicério, acesso pela Avenida do Estado, 4434) - Bairro: Liberdade - CEP:01517-100", lat:-23.559981, lng:-46.623199, materiais:["reciclaveis","entulho","gesso"] },
+      { id:111, nome:"Liberdade", subpref: "Sé", endereco:"Rua Jaceguai, nº 67, esquina com a Avenida Liberdade – Bairro: Bela Vista - CEP: 01315-010", lat:-23.565886, lng:-46.635887, materiais:["reciclaveis","entulho","madeira"] },
+      { id:112, nome:"Armênia", subpref: "Sé", endereco:"Rua General Carmona, nº 156 – Bairro: Luz - CEP: 01102-030", lat:-23.535574, lng:-46.634673, materiais:["reciclaveis","entulho","madeira"] },
+      { id:113, nome:"Barra Funda", subpref: "Sé", endereco:"Rua Cônego Vicente Miguel Marino, nº 76 - (Baixos Viaduto Engenheiro Orlando Murgel)", lat:-23.527375, lng:-46.674997, materiais:["reciclaveis","entulho","madeira"] },
+      { id:114, nome:"Cambuci", subpref: "Sé", endereco:"Avenida Dom Pedro I, nº 38 – Bairro: Vila Monumento - CEP: 01552-001", lat:-23.570773, lng:-46.618640, materiais:["reciclaveis","entulho","gesso"] },
+      { id:116, nome:"Bela Vista", subpref: "Sé", endereco:"Rua Quatorze de Julho, nº 59 – Bairro: Bela Vista - CEP: 01324-040", lat:-23.568466, lng:-46.643809, materiais:["reciclaveis","entulho","gesso"] },
+
+      // Subprefeitura Vila Maria/ Vila Guilherme
+      { id:117, nome:"Vila Guilherme", subpref: "Vila Maria/ Vila Guilherme", endereco:"Rua José Bernardo Pinto, nº 1480 – Bairro: Vila Guilherme - CEP: 02055-001", lat:-23.520846, lng:-46.608359, materiais:["reciclaveis","entulho","gesso"] },
+      { id:118, nome:"Vila Sabrina", subpref: "Vila Maria/ Vila Guilherme", endereco:"Avenida do Poeta, nº 931 – Bairro: Jardim Julieta - CEP: 02161-160", lat:-23.489708, lng:-46.582877, materiais:["reciclaveis","entulho","madeira"] },
+      { id:119, nome:"Vila Maria", subpref: "Vila Maria/ Vila Guilherme", endereco:"Rua Curuçá, nº 1.700 - Bairro: Jardim Andaraí - CEP: 02168-150", lat:-23.504944, lng:-46.598285, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Vila Mariana
+      { id:120, nome:"Mirandópolis", subpref: "Vila Mariana", endereco:"Avenida Senador Casemiro da Rocha, nº 1220, esquina com Avenida José Maria Whitaker – Bairro: Mirandópolis", lat:-23.602521, lng:-46.638575, materiais:["reciclaveis","entulho","gesso"] },
+      { id:121, nome:"Vila Mariana", subpref: "Vila Mariana", endereco:"Rua Mauricio Francisco Klabin, nº37 – Bairro: Vila Mariana - CEP: 04120-020", lat:-23.593679, lng:-46.629160, materiais:["reciclaveis","entulho","gesso"] },
+      { id:122, nome:"Saioa", subpref: "Vila Mariana", endereco:"Rua Mary Baida Salem, nº01 – Bairro: Vila Firmiano Pinto - CEP: 04124-210", lat:-23.610660, lng:-46.613386, materiais:["reciclaveis","entulho","madeira"] },
+      { id:123, nome:"Rubem Berta", subpref: "Vila Mariana", endereco:"Avenida Rubem Berta, 1100 (baixo do Viaduto Onze de Junho) - Bairro: Indianópolis - CEP: 04014-010", lat:-23.597500, lng:-46.629160, materiais:["reciclaveis","entulho","madeira"] },
+
+      // Subprefeitura Vila Prudente
+      { id:124, nome:"Anhaia Mello", subpref: "Vila Prudente", endereco:"Rua da Prece, nº 296 – Bairro: Vila Prudente - CEP: 03156-210", lat:-23.585189, lng:-46.586221, materiais:["reciclaveis","entulho","gesso"] },
+      { id:125, nome:"São Lucas", subpref: "Vila Prudente", endereco:"Rua Florêncio Sanches, nº 307 – Bairro: Parque Residencial Oratorio - CEP: 03266-120", lat:-23.605389, lng:-46.539755, materiais:["reciclaveis","entulho","gesso"] },
+      { id:126, nome:"Vila Industrial", subpref: "Vila Prudente", endereco:"Rua Lisa Ansorge, altura do nº 645 – Bairro: Jardim Guairaca - CEP: 03244-060", lat:-23.593026, lng:-46.535300, materiais:["reciclaveis","entulho","gesso"] }
+    ];
+    
+    // ---------- Inicializa mapa (O restante do JavaScript é o mesmo) ----------
+    const map = L.map('map').setView([-23.55, -46.63], 12);
+    // Adiciona o tilelayer padrão OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // ---------- Variáveis de estado ----------
+    let userLatLng = null;
+    let userMarker = null;
+    let rotaLayer = null;
+    let markers = [];
+
+    // Ícones personalizados (Estilo Maps)
+    const gessoIcon = L.divIcon({
+      className: 'custom-div-icon',
+      html: '<svg class="gesso-icon-svg" xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H8V7h6c1.1 0 2 .9 2 2v2c0 1.1-.9 2-2 2h-3v4h-2zM12 9h2V7h-2v2z"/></svg>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 30],
+      popupAnchor: [0, -25]
+    });
+    
+    const defaultIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: '<svg class="default-icon-svg" xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><path d="M12 2c-4.2 0-8 3.22-8 8.2a9 9 0 001.5 5.5l5.5 5.5 5.5-5.5a9 9 0 001.5-5.5c0-4.98-3.8-8.2-8-8.2zm0 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -25]
+    });
+
+    // ---------- Cria marcadores e popups ----------
+    function criarPopupHtml(p) {
+      const gessoInfo = p.materiais.includes('gesso') ? `<span class="gesso-info">🗑️ Este Ecoponto recebe Gesso</span>` : '';
+      
+      return `
+        <div style="min-width:200px; font-family: Roboto, Arial, sans-serif;">
+          <strong style="font-size: 16px; color: #333;">${p.nome}</strong>
+          <span class="subpref">Subprefeitura: ${p.subpref}</span>
+          <small style="display: block; margin-top: 4px;">${p.endereco}</small>
+          ${gessoInfo}
+          <div style="margin-top:10px">
+            <button class="small-btn" style="background:#1a73e8; padding: 6px 12px; width: 100%; box-sizing: border-box;" onclick="traçarRotaFromUser(${p.lat}, ${p.lng})">Traçar rota até aqui</button>
+          </div>
+
+          <div class="popup-calc">
+            <strong style="color: #333;">Calculadora rápida</strong><br>
+            <label style="font-size:12px;">Peso (kg)</label><br>
+            <input id="kg_popup_${p.id}" type="number" min="0" step="0.1" value="1" style="width:70px; padding: 4px; border: 1px solid #ddd; border-radius: 3px;"><br>
+            <label style="font-size:12px;">Material</label><br>
+            <select id="mat_popup_${p.id}" style="width:140px; padding: 4px; border: 1px solid #ddd; border-radius: 3px;">
+              <option value="reciclaveis">Recicláveis (misto)</option>
+              <option value="papel">Papel</option>
+              <option value="plastico">Plástico</option>
+              <option value="vidro">Vidro</option>
+              <option value="metal">Metal</option>
+              <option value="eletronicos">Eletroeletrônicos</option>
+              <option value="oleo">Óleo</option>
+              <option value="gesso">Gesso</option>
+            </select><br>
+            <button onclick="calcularPopup(${p.id})" style="margin-top:6px; background:#34a853; color: white; width: 100%; box-sizing: border-box;" class="small-btn">Calcular</button>
+            <div id="res_popup_${p.id}" style="margin-top:6px;font-size:13px"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function carregarMarcadores() {
+      markers.forEach(obj => map.removeLayer(obj.marker));
+      markers = [];
+
+      pontos.forEach(p => {
+        const icon = p.materiais.includes('gesso') ? gessoIcon : defaultIcon;
+        const m = L.marker([p.lat, p.lng], { icon: icon }).addTo(map);
+        m.bindPopup(criarPopupHtml(p));
+        markers.push({ marker: m, dados: p });
+      });
+    }
+
+    carregarMarcadores();
+
+    // ---------- Função para localizar usuário ----------
+    document.getElementById('btnLocate').addEventListener('click', () => {
+      // ESTE É O BLOQUEIO: SÓ FUNCIONA EM HTTPS.
+      if (!navigator.geolocation) {
+        alert("Geolocalização não suportada neste navegador.");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        userLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+        if (userMarker) map.removeLayer(userMarker);
+        // Marcador do usuário (Estilo Maps: Círculo Azul)
+        userMarker = L.circleMarker(userLatLng, {
+            radius: 8,
+            color: '#1a73e8', // Azul Maps
+            fillColor: '#4285F4',
+            fillOpacity: 0.8,
+            weight: 2
+        }).addTo(map).bindPopup("📍 Você está aqui").openPopup();
+
+        map.setView(userLatLng, 15);
+      }, (err) => {
+        let msg = "Não foi possível obter localização: " + err.message;
+        if (err.code === 1) {
+            msg += "\n\nPermissão negada. Por favor, permita o acesso à localização nas configurações.";
+        } else if (err.code === 2) {
+             msg += "\n\nLocalização indisponível. Verifique se o GPS está ativo.";
+        }
+        msg += "\n\nSe estiver no Android/Chrome e o erro persistir, a causa é o **bloqueio de segurança (HTTPS)**. Hospede o arquivo online!";
+        alert(msg);
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
+
+    // ---------- Função para traçar rota via OSRM ----------
+    window.traçarRotaFromUser = async function(destLat, destLng) {
+        if (!userLatLng) {
+            alert("Permita sua localização clicando em 'Minha localização' ou use a Busca para definir sua origem (ponto A) antes de traçar rota.");
+            return;
+        }
+
+        if (rotaLayer) {
+            map.removeLayer(rotaLayer);
+            rotaLayer = null;
+        }
+        map.closePopup();
+
+        const srcLng = userLatLng.lng;
+        const srcLat = userLatLng.lat;
+        
+        const startPoint = `${srcLng},${srcLat}`;
+        const endPoint = `${destLng},${destLat}`;
+
+        const url = `https://router.project-osrm.org/route/v1/driving/${startPoint};${endPoint}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+        
+        try {
+            const resp = await fetch(url);
+            
+            if (!resp.ok) {
+               throw new Error(`Erro na rede ou servidor OSRM: ${resp.status}`);
+            }
+            
+            const data = await resp.json();
+            
+            if (data.code !== 'Ok' || data.routes.length === 0) {
+              alert(`Rota não encontrada. Motivo: ${data.code || 'Desconhecido'}. Verifique se a origem e o destino são acessíveis de carro.`);
+              return;
+            }
+            
+            const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+            const dist = data.routes[0].distance; 
+            const dur = data.routes[0].duration; 
+
+            // Rota Azul, estilo Google Maps
+            rotaLayer = L.polyline(coords, {color:'#1a73e8', weight:6, opacity:0.8}).addTo(map);
+            map.fitBounds(rotaLayer.getBounds(), {padding:[40,40]});
+
+            const distKm = (dist/1000).toFixed(2);
+            const durMin = Math.round(dur/60);
+            
+            L.popup({maxWidth:300})
+              .setLatLng([destLat, destLng])
+              .setContent(`
+                <strong>🚗 Rota Calculada:</strong><br>
+                Distância: <strong>${distKm} km</strong><br>
+                Duração aprox.: <strong>${durMin} min</strong>
+              `)
+              .openOn(map);
+
+        } catch(e) {
+            console.error("Erro ao traçar rota:", e);
+            alert("Erro ao traçar rota. Tente novamente ou verifique sua conexão.");
+        }
+    }
+
+    // ---------- Calculadora (painel principal) ----------
+    const fatores = {
+      papel: 1.5,
+      plastico: 1.0,
+      vidro: 0.3,
+      metal: 4.0,
+      eletronicos: 6.0,
+      oleo: 2.5,
+      reciclaveis: 1.0,
+      gesso: 0.8
+    };
+
+    document.getElementById('btnCalc').addEventListener('click', ()=> {
+      const peso = parseFloat(document.getElementById('calcPeso').value);
+      const mat = document.getElementById('calcMaterial').value;
+      if (!peso || peso <= 0) return alert("Informe um peso válido (kg).");
+      
+      const co2Factor = fatores[mat] || 1.0;
+      const aguaFactor = mat === 'gesso' ? 5 : 20;
+      const energiaFactor = mat === 'gesso' ? 1.0 : 1.5;
+
+      const co2 = co2Factor * peso;
+      const agua = Math.round(aguaFactor * peso);
+      const energia = (energiaFactor * peso).toFixed(2);
+      
+      document.getElementById('calcResult').innerHTML =
+        `🌍 Você evitou ~ <strong>${co2.toFixed(2)} kg CO₂</strong><br>💧 Água economizada: <strong>${agua} L</strong><br>⚡ Energia economizada: <strong>${energia} kWh</strong>`;
+    });
+
+    // ---------- Calculadora no popup ----------
+    window.calcularPopup = function(id) {
+      const kgEl = document.getElementById('kg_popup_' + id);
+      const matEl = document.getElementById('mat_popup_' + id);
+      const resEl = document.getElementById('res_popup_' + id);
+      if (!kgEl || !matEl || !resEl) return;
+      const peso = parseFloat(kgEl.value);
+      const mat = matEl.value;
+      if (!peso || peso <= 0) return alert("Informe um peso válido (kg).");
+
+      const co2Factor = fatores[mat] || 1.0;
+      const aguaFactor = mat === 'gesso' ? 5 : 20;
+      const energiaFactor = mat === 'gesso' ? 1.0 : 1.5;
+
+      const co2 = co2Factor * peso;
+      const agua = Math.round(aguaFactor * peso);
+      const energia = (energiaFactor * peso).toFixed(2);
+      
+      resEl.innerHTML = `🌍 ${co2.toFixed(2)} kg CO₂ evitados • 💧 ${agua} L • ⚡ ${energia} kWh`;
+    };
+
+    // ---------- Filtro por material ----------
+    document.getElementById('filter').addEventListener('change', (e)=>{
+      const tipo = e.target.value;
+      markers.forEach(obj=>{
+        const tem = obj.dados.materiais.includes(tipo);
+        if (tipo === 'todos' || tem) {
+          if (!map.hasLayer(obj.marker)) map.addLayer(obj.marker);
+        } else {
+          if (map.hasLayer(obj.marker)) map.removeLayer(obj.marker);
+        }
+      });
+    });
+
+    // ---------- LÓGICA DE BUSCA MANUAL (VIA NOMINATIM) ----------
+    document.getElementById('btnSearch').addEventListener('click', searchLocation);
+
+    async function searchLocation() {
+      const q = document.getElementById('search').value;
+      if (!q || q.trim().length < 2) return alert("Digite um endereço ou bairro para buscar.");
+      
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ' São Paulo BR')}&limit=1&addressdetails=1`;
+      
+      try {
+        const resp = await fetch(url, { 
+          headers: {
+            'Accept-Language': 'pt-BR',
+            'User-Agent': 'Ecopontos-App-v1'
+          }
+        });
+        
+        if (!resp.ok) {
+           throw new Error(`Erro na rede ou no servidor Nominatim: ${resp.status}`);
+        }
+        
+        const data = await resp.json();
+        
+        if (!data || data.length === 0) {
+          return alert(`Local "${q}" não encontrado. Tente ser mais específico.`);
+        }
+        
+        // Remove marcadores de busca anteriores e atualiza a localização do usuário
+        if (rotaLayer) { map.removeLayer(rotaLayer); rotaLayer = null; }
+        if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+
+        const lat = parseFloat(data[0].lat);
+        const lon = parseFloat(data[0].lon);
+        const searchLatLng = L.latLng(lat, lon);
+        
+        userLatLng = searchLatLng; // Define como ponto de origem para rotas futuras
+        
+        // Marcador de busca (Estilo Maps: Ponto A)
+        userMarker = L.marker(searchLatLng, {
+            title:"Busca", 
+            icon: L.divIcon({
+                className: 'custom-div-icon',
+                html: '<svg fill="#db4437" xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"><path d="M12 2c-4.2 0-8 3.22-8 8.2a9 9 0 001.5 5.5l5.5 5.5 5.5-5.5a9 9 0 001.5-5.5c0-4.98-3.8-8.2-8-8.2zm0 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30],
+                popupAnchor: [0, -25]
+            })
+        }).addTo(map).bindPopup(`🔎 Última busca: ${data[0].display_name}<br>Ponto A (Origem para Rotas)`).openPopup();
+
+        map.setView([lat, lon], 15);
+
+      } catch (e) {
+        console.error("Erro na busca:", e);
+        alert(`Erro ao buscar localização: ${e.message}. Tente novamente.`);
+      }
+    }
+
+
+    // ---------- Limpar rota / popup / busca ----------
+    document.getElementById('btnClear').addEventListener('click', ()=>{
+      if (rotaLayer) { map.removeLayer(rotaLayer); rotaLayer = null; }
+      if (userMarker) { map.removeLayer(userMarker); userMarker = null; userLatLng = null; }
+      document.getElementById('search').value = '';
+      map.closePopup();
+      map.setView([-23.55, -46.63], 12);
+    });
+
+    // ---------- Ajustes finos: fechar popups ao mover mapa para evitar inputs desconectados ----------
+    map.on('popupclose', ()=>{ /* nada por agora */ });
+  </script>
+</body>
+</html>
