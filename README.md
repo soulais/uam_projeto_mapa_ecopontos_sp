@@ -10,7 +10,7 @@ O projeto foi construído em um único arquivo HTML, utilizando o Leaflet.js par
 
 O mapa interativo está hospedado no GitHub Pages e pode ser acessado em:
 
-[*Acesse o Mapa Ecopontos SP*]([https://SEU-USUARIO.github.io/mapa-ecopontos-sp/](https://soulais.github.io/uam_projeto_mapa_ecopontos_sp/index.html))
+[*Acesse o Mapa Ecopontos SP*]((https://soulais.github.io/uam_projeto_mapa_ecopontos_sp/index.html)])
 
 
 
